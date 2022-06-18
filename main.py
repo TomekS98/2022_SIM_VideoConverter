@@ -1,47 +1,74 @@
 import cv2
 import numpy as np
-cap1 = cv2.VideoCapture("rtsp://localhost:8554/xd")
-cap2 = cv2.VideoCapture("rtsp://localhost:8554/xd2")
-cap3 = cv2.VideoCapture("rtsp://localhost:8554/xd")
-cap4 = cv2.VideoCapture("rtsp://localhost:8554/xd")
-cap5 = cv2.VideoCapture("rtsp://localhost:8554/xd")
-cap6 = cv2.VideoCapture("rtsp://localhost:8554/xd")
-cap7 = cv2.VideoCapture("rtsp://localhost:8554/xd")
-cap8 = cv2.VideoCapture("rtsp://localhost:8554/xd")
-cap9 = cv2.VideoCapture("rtsp://localhost:8554/xd")
+import sys
+import _thread as thread
 
-while(cap1.isOpened()):
-    ret1, frame1 = cap1.read()
-    ret2, frame2 = cap2.read()
-    ret3, frame3 = cap3.read()
-    ret4, frame4 = cap4.read()
-    ret5, frame5 = cap5.read()
-    ret6, frame6 = cap6.read()
-    ret7, frame7 = cap7.read()
-    ret8, frame8 = cap8.read()
-    ret9, frame9 = cap9.read()
+rtsp_stream_paths = []
 
-    if ret2 == False:
-        cap2 = cv2.VideoCapture("rtsp://localhost:8554/xd2")
-    # for index, frame in enumerate(frames):
-    #     if frame is not None:
-    #         frame[index] = cv2.resize(frame)
-    if frame1 is not None:
-        frame1 = cv2.resize(frame1, (1000, 1000))
-    if frame2 is not None:
-        frame2 = cv2.resize(frame2, (1000, 1000))
+video_capture = []
+status_of_captured_frames = []
+captured_frames = []
+opened_streams_count = 0
+def init():
+    for path in rtsp_stream_paths:
+        video_capture.append(cv2.VideoCapture(path))
 
-    if frame1 is not None and frame2 is not None:
-        frame1 = cv2.resize(frame1, (1000,500))
-        frame2 = cv2.resize(frame2, (1000, 500))
-        ostream = np.concatenate((frame1, frame2), axis=0)
-        ostream.shape == (frame1.shape[0], 2 * frame2.shape[1])
-    elif frame1 is not None:
-        ostream = frame1
+    for video in video_capture:
+        input_shape = np.shape(video.read()[1])
+        captured_frames.append(np.empty(shape=input_shape))
 
-    cv2.imshow('output', ostream)
-    if cv2.waitKey(20) & 0xFF == ord('q'):
-        break
+def get_output(opened_streams_count, opened_streames_indexes):
+    if opened_streams_count == 1:
+        resolution = (1280, 720)
+        captured_frames[opened_streames_indexes[0]] = cv2.resize(captured_frames[opened_streames_indexes[0]],
+                                                                 resolution)
+        return captured_frames[opened_streames_indexes[0]]
+    elif opened_streams_count == 2:
+        resolution = (768, 432)
+        return np.concatenate(tuple((cv2.resize(captured_frames[index], resolution) for index in opened_streames_indexes)),
+                                 axis=1)
+    elif opened_streams_count == 3:
+        resolution = (512, 288)
+        return np.concatenate(tuple((cv2.resize(captured_frames[index], resolution) for index in opened_streames_indexes)),
+                                 axis=1)
+    else:
+        resolution = (640, 360)
+        for index, frame in enumerate(captured_frames):
+            captured_frames[index] = cv2.resize(frame, resolution)
+        ostream1 = np.concatenate((captured_frames[0], captured_frames[1]), axis=0)
+        ostream2 = np.concatenate((captured_frames[2], captured_frames[3]), axis=0)
+        return np.concatenate((ostream1, ostream2), axis=1)
 
 
-cv2.destroyAllWindows()
+def renew_connection(index):
+    global video_capture
+    video_capture[index] = cv2.VideoCapture(rtsp_stream_paths[index])
+
+def connect_inputs():
+    while any(video.isOpened() for video in video_capture):
+        opened_streams_count = 0
+        opened_streames_indexes = []
+        for index, video in enumerate(video_capture):
+            status, frame = video.read()
+            status_of_captured_frames.append(status)
+            if status:
+                opened_streams_count += 1
+                opened_streames_indexes.append(index)
+                captured_frames[index] = frame
+            else:
+                thread.start_new_thread(renew_connection, (index,))
+        ostream = get_output(opened_streams_count, opened_streames_indexes)
+        cv2.imshow('output', ostream)
+        if cv2.waitKey(20) & 0xFF == ord('q'):
+            break
+
+
+def main():
+    global rtsp_stream_paths
+    rtsp_stream_paths = [sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]]
+    init()
+    connect_inputs()
+    cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    sys.exit(main())
