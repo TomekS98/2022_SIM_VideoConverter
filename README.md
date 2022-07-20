@@ -1,4 +1,4 @@
-# 2022_SIM_VideoConverter
+# 2022_SIM_VideoMultiplexer
 
 Creates one output stream from multiple RTSP input streams.
 
